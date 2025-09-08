@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gym Schedule Todo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-content {
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.3s ease-in-out;
+        }
+        .tab-content.active {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        .exercise-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .exercise-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        .setup-screen {
+            transition: all 0.4s ease-in-out;
+        }
+        .workout-screen {
+            transition: all 0.4s ease-in-out;
+        }
+        .celebration {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #f39c12;
+            animation: confetti-fall 3s linear forwards;
+        }
+        .confetti:nth-child(odd) {
+            background: #e74c3c;
+            animation-delay: 0.5s;
+        }
+        .confetti:nth-child(3n) {
+            background: #3498db;
+            animation-delay: 1s;
+        }
+        .confetti:nth-child(4n) {
+            background: #2ecc71;
+            animation-delay: 1.5s;
+        }
+        .confetti:nth-child(5n) {
+            background: #9b59b6;
+            animation-delay: 2s;
+        }
+        @keyframes confetti-fall {
+            0% {
+                transform: translateY(-100vh) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+        .celebration-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 1001;
+            animation: celebration-bounce 0.6s ease-out;
+        }
+        @keyframes celebration-bounce {
+            0% {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+            50% {
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+    <!-- Setup Screen -->
+    <div id="setupScreen" class="setup-screen">
+        <div class="bg-gradient-to-br from-blue-600 to-purple-700 text-white p-6 pb-8">
+            <h1 class="text-2xl font-bold text-center mb-2">💪 Gym Schedule Todo</h1>
+            <p class="text-blue-100 text-center text-sm">Paste your workout JSON to get started</p>
+        </div>
+        
+        <div class="p-6 space-y-6">
+            <div>
+                <label for="jsonInput" class="block text-sm font-medium text-gray-700 mb-2">
+                    Workout Schedule JSON
+                </label>
+                <textarea 
+                    id="jsonInput" 
+                    rows="12" 
+                    class="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm font-mono"
+                    placeholder="Paste your JSON workout schedule here..."
+                ></textarea>
+            </div>
+            
+            <div id="errorMessage" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            </div>
+            
+            <button 
+                id="setupButton"
+                class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 px-6 rounded-lg font-semibold text-lg shadow-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 transform hover:scale-105"
+            >
+                🚀 Setup Workout Plan
+            </button>
+        </div>
+    </div>
+
+    <!-- Workout Screen -->
+    <div id="workoutScreen" class="workout-screen hidden">
+        <!-- Header -->
+        <div class="bg-gradient-to-br from-blue-600 to-purple-700 text-white p-4 pb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h1 class="text-xl font-bold">💪 Your Workout Plan</h1>
+                <button id="backButton" class="text-blue-100 hover:text-white transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <div class="flex bg-white/10 rounded-lg p-1" id="tabNavigation">
+                <!-- Tabs will be generated here -->
+            </div>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="p-4 pb-20" id="tabContent">
+            <!-- Exercise cards will be generated here -->
+        </div>
+    </div>
+
+    <script>
+        let workoutData = null;
+        let currentTab = 0;
+        let completedExercises = {}; // Track completed exercises by day and exercise index
+
+        // DOM elements
+        const setupScreen = document.getElementById('setupScreen');
+        const workoutScreen = document.getElementById('workoutScreen');
+        const jsonInput = document.getElementById('jsonInput');
+        const setupButton = document.getElementById('setupButton');
+        const backButton = document.getElementById('backButton');
+        const errorMessage = document.getElementById('errorMessage');
+        const tabNavigation = document.getElementById('tabNavigation');
+        const tabContent = document.getElementById('tabContent');
+
+        // Sample JSON for testing
+        const sampleJSON = `{
+  "days": [
+    {
+      "day": "Day 1",
+      "exercises": [
+        {
+          "name": "Barbell Bench Press",
+          "sets": 4,
+          "reps": "8-10",
+          "image": "barbell-bench-press.jpg"
+        },
+        {
+          "name": "Incline Dumbbell Press",
+          "sets": 3,
+          "reps": "10-12",
+          "image": "incline-dumbbell-press.jpg"
+        },
+        {
+          "name": "Push-Ups",
+          "sets": 3,
+          "reps": "15-20",
+          "image": "push-ups.jpg"
+        }
+      ]
+    },
+    {
+      "day": "Day 2",
+      "exercises": [
+        {
+          "name": "Barbell Squat",
+          "sets": 4,
+          "reps": "8-10",
+          "image": "barbell-squat.jpg"
+        },
+        {
+          "name": "Leg Press",
+          "sets": 3,
+          "reps": "12-15",
+          "image": "leg-press.jpg"
+        },
+        {
+          "name": "Walking Lunges",
+          "sets": 3,
+          "reps": "20 steps",
+          "image": "walking-lunges.jpg"
+        }
+      ]
+    },
+    {
+      "day": "Day 3",
+      "exercises": [
+        {
+          "name": "Pull-Ups",
+          "sets": 4,
+          "reps": "6-8",
+          "image": "pull-ups.jpg"
+        },
+        {
+          "name": "Barbell Deadlift",
+          "sets": 4,
+          "reps": "6-8",
+          "image": "barbell-deadlift.jpg"
+        },
+        {
+          "name": "Seated Cable Row",
+          "sets": 3,
+          "reps": "10-12",
+          "image": "seated-cable-row.jpg"
+        }
+      ]
+    }
+  ]
+}`;
+
+        // Pre-fill with sample JSON
+        jsonInput.value = sampleJSON;
+
+        // Setup button click handler
+        setupButton.addEventListener('click', () => {
+            const jsonText = jsonInput.value.trim();
+            
+            if (!jsonText) {
+                showError('Please paste your workout JSON first.');
+                return;
+            }
+
+            try {
+                workoutData = JSON.parse(jsonText);
+                
+                if (!workoutData.days || !Array.isArray(workoutData.days)) {
+                    throw new Error('Invalid JSON structure. Expected "days" array.');
+                }
+
+                hideError();
+                showWorkoutScreen();
+            } catch (error) {
+                showError('Invalid JSON format. Please check your input and try again.');
+            }
+        });
+
+        // Back button click handler
+        backButton.addEventListener('click', () => {
+            showSetupScreen();
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessage.classList.add('hidden');
+        }
+
+        function showWorkoutScreen() {
+            setupScreen.classList.add('hidden');
+            workoutScreen.classList.remove('hidden');
+            completedExercises = {}; // Reset completion status for new workout
+            generateTabs();
+            showTab(0);
+        }
+
+        function showSetupScreen() {
+            workoutScreen.classList.add('hidden');
+            setupScreen.classList.remove('hidden');
+        }
+
+        function generateTabs() {
+            // Generate tab navigation
+            tabNavigation.innerHTML = workoutData.days.map((day, index) => `
+                <button 
+                    class="tab-btn flex-1 py-2 px-3 text-sm font-medium rounded-md transition-all duration-200 ${index === 0 ? 'bg-white text-blue-600 shadow-sm' : 'text-white/70 hover:text-white hover:bg-white/10'}"
+                    data-tab="${index}"
+                >
+                    ${day.day}
+                </button>
+            `).join('');
+
+            // Add tab click handlers
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const tabIndex = parseInt(e.target.dataset.tab);
+                    showTab(tabIndex);
+                });
+            });
+        }
+
+        function showTab(tabIndex) {
+            currentTab = tabIndex;
+            
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach((btn, index) => {
+                if (index === tabIndex) {
+                    btn.className = 'tab-btn flex-1 py-2 px-3 text-sm font-medium rounded-md transition-all duration-200 bg-white text-blue-600 shadow-sm';
+                } else {
+                    btn.className = 'tab-btn flex-1 py-2 px-3 text-sm font-medium rounded-md transition-all duration-200 text-white/70 hover:text-white hover:bg-white/10';
+                }
+            });
+
+            // Generate exercise cards
+            const day = workoutData.days[tabIndex];
+            const completedCount = getCompletedCount(tabIndex);
+            
+            tabContent.innerHTML = `
+                <div class="tab-content active">
+                    <div class="mb-4">
+                        <h2 class="text-xl font-bold text-gray-800 mb-1">${day.day}</h2>
+                        <p class="text-gray-600 text-sm">${completedCount}/${day.exercises.length} exercises completed</p>
+                    </div>
+                    <div class="space-y-4">
+                        ${day.exercises.map((exercise, exerciseIndex) => {
+                            const isCompleted = isExerciseCompleted(tabIndex, exerciseIndex);
+                            return `
+                            <div class="exercise-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 ${isCompleted ? 'opacity-75' : ''}">
+                                <div class="flex items-start space-x-4">
+                                    <div class="flex-shrink-0">
+                                        <div class="w-24 h-24 bg-gradient-to-br from-blue-100 to-purple-100 rounded-xl flex items-center justify-center">
+                                            <span class="text-4xl">${isCompleted ? '✅' : '💪'}</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <h3 class="font-semibold text-gray-900 text-lg mb-1 ${isCompleted ? 'line-through text-gray-500' : ''}">${exercise.name}</h3>
+                                        <div class="flex items-center space-x-4 text-sm text-gray-600 mb-3">
+                                            <span class="bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">
+                                                ${exercise.sets} sets
+                                            </span>
+                                            <span class="bg-purple-50 text-purple-700 px-2 py-1 rounded-full font-medium">
+                                                ${exercise.reps} reps
+                                            </span>
+                                        </div>
+                                        <button 
+                                            class="complete-btn w-full py-2 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${
+                                                isCompleted 
+                                                    ? 'bg-gray-100 text-gray-500 border border-gray-200' 
+                                                    : 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+                                            }"
+                                            data-day="${tabIndex}" 
+                                            data-exercise="${exerciseIndex}"
+                                        >
+                                            ${isCompleted ? '✓ Completed' : 'Mark Complete'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+
+            // Add click handlers for complete buttons
+            document.querySelectorAll('.complete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const dayIndex = parseInt(e.target.dataset.day);
+                    const exerciseIndex = parseInt(e.target.dataset.exercise);
+                    toggleExerciseComplete(dayIndex, exerciseIndex);
+                });
+            });
+        }
+
+        function isExerciseCompleted(dayIndex, exerciseIndex) {
+            return completedExercises[`${dayIndex}-${exerciseIndex}`] || false;
+        }
+
+        function getCompletedCount(dayIndex) {
+            const day = workoutData.days[dayIndex];
+            let count = 0;
+            for (let i = 0; i < day.exercises.length; i++) {
+                if (isExerciseCompleted(dayIndex, i)) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        function toggleExerciseComplete(dayIndex, exerciseIndex) {
+            const key = `${dayIndex}-${exerciseIndex}`;
+            const wasCompleted = completedExercises[key];
+            completedExercises[key] = !completedExercises[key];
+            
+            // If exercise was just completed (not uncompleted), show celebration
+            if (!wasCompleted && completedExercises[key]) {
+                showCelebration();
+                
+                // Check if all exercises for the day are completed
+                const day = workoutData.days[dayIndex];
+                const allCompleted = day.exercises.every((_, index) => 
+                    isExerciseCompleted(dayIndex, index)
+                );
+                
+                if (allCompleted) {
+                    setTimeout(() => {
+                        showDayCompleteCelebration(workoutData.days[dayIndex].day);
+                    }, 1000);
+                }
+            }
+            
+            // Refresh the current tab to update the UI
+            showTab(currentTab);
+        }
+
+        function showCelebration() {
+            // Create celebration container
+            const celebration = document.createElement('div');
+            celebration.className = 'celebration';
+            
+            // Create confetti pieces
+            for (let i = 0; i < 50; i++) {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.left = Math.random() * 100 + '%';
+                confetti.style.animationDelay = Math.random() * 2 + 's';
+                celebration.appendChild(confetti);
+            }
+            
+            // Add celebration message
+            const message = document.createElement('div');
+            message.className = 'celebration-message';
+            message.innerHTML = '🎉 Great job! 🎉';
+            celebration.appendChild(message);
+            
+            document.body.appendChild(celebration);
+            
+            // Remove celebration after animation
+            setTimeout(() => {
+                document.body.removeChild(celebration);
+            }, 3000);
+        }
+
+        function showDayCompleteCelebration(dayName) {
+            // Create celebration container
+            const celebration = document.createElement('div');
+            celebration.className = 'celebration';
+            
+            // Create more confetti for day completion
+            for (let i = 0; i < 100; i++) {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.left = Math.random() * 100 + '%';
+                confetti.style.animationDelay = Math.random() * 3 + 's';
+                celebration.appendChild(confetti);
+            }
+            
+            // Add day completion message
+            const message = document.createElement('div');
+            message.className = 'celebration-message';
+            message.innerHTML = `🏆 ${dayName} Complete! 🏆<br><span style="font-size: 16px; font-weight: normal;">Amazing work today!</span>`;
+            celebration.appendChild(message);
+            
+            document.body.appendChild(celebration);
+            
+            // Remove celebration after animation
+            setTimeout(() => {
+                document.body.removeChild(celebration);
+            }, 4000);
+        }
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97bd74b07431ce19',t:'MTc1NzMyNDEyNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
